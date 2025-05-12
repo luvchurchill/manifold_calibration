@@ -24,10 +24,11 @@ class MarketsParser {
       final String outcomeType = marketJson['outcomeType'];
       final String id = marketJson['id'];
       final bool? shouldAnswersSumToOne = marketJson["shouldAnswersSumToOne"];
-      final List<dynamic>? answers = marketJson['answers'];
+      final List<dynamic>? answers = marketJson['answers'];      final String question = marketJson['question'];
 
       final market = Market(
         id: id,
+        question: question,
         outcome: switch (outcomeType) {
           'BINARY' => switch (resolution) {
               'YES' => BinaryMarketOutcomeYes(),
