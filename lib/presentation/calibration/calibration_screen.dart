@@ -6,7 +6,6 @@ import 'package:manifold_callibration/presentation/calibration/calibration_contr
 import 'package:manifold_callibration/presentation/calibration/calibration_route_value.dart';
 import 'package:manifold_callibration/presentation/calibration/output_banner.dart';
 import 'package:manifold_callibration/presentation/calibration/username_banner.dart';
-import 'package:logger/logger.dart';
 import 'package:styled_text/styled_text.dart'; // Import the logger package
 
 class CalibrationScreen extends ConsumerStatefulWidget {
