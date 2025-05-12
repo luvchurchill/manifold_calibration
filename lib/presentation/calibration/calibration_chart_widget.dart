@@ -22,6 +22,34 @@ class _CalibrationChartWidgetState extends State<CalibrationChartWidget> {
   int? _hoveredBucketIndex;
   bool _hoveringYes = false;
 
+  Rect? _getArrowHitbox(int bucketIndex, bool isYes, Size size) {
+    const scaleDown = 0.9;
+    // Account for arrow icon size and extra margin.
+    const arrowIconSize = 16.0;
+    const extraMargin = 4.0;
+    const hitboxSize = arrowIconSize + extraMargin;
+    
+    final offsetX = size.width * (1 - scaleDown) * 0.5;
+    final offsetY = size.height * (1 - scaleDown) * 0.5;
+    final bucketWidth = size.width / widget.buckets.length;
+    final originalX = bucketWidth * (bucketIndex + 0.5);
+    final drawnX = originalX * scaleDown + offsetX;
+    
+    final bucket = widget.buckets[bucketIndex];
+    final originalY = size.height * (1 - (isYes ? bucket.yesRatio : bucket.noRatio));
+    final drawnY = originalY * scaleDown + offsetY;
+    
+    // Clamp center so that hitbox does not exceed canvas boundaries.
+    final clampedX = drawnX.clamp(hitboxSize / 2, size.width - hitboxSize / 2);
+    final clampedY = drawnY.clamp(hitboxSize / 2, size.height - hitboxSize / 2);
+    
+    return Rect.fromCenter(
+      center: Offset(clampedX, clampedY),
+      width: hitboxSize,
+      height: hitboxSize,
+    );
+  }
+
   @override
   void dispose() {
     _removeOverlay();
@@ -37,16 +65,39 @@ class _CalibrationChartWidgetState extends State<CalibrationChartWidget> {
     _removeOverlay();
     
     final overlay = Overlay.of(context);
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    
+    final localPosition = box.localToGlobal(position);
+    final screenSize = MediaQuery.of(context).size;
+    
+    const tooltipWidth = 300.0;
+    final tooltipHeight = 56.0 + (bets.length * 44.0);
+    
+    var adjustedX = localPosition.dx + 20;
+    var adjustedY = localPosition.dy;
+    
+    if (adjustedX + tooltipWidth > screenSize.width) {
+      adjustedX = localPosition.dx - tooltipWidth - 20;
+    }
+    
+    if (adjustedY + tooltipHeight > screenSize.height) {
+      adjustedY = screenSize.height - tooltipHeight - 20;
+    }
+    if (adjustedY < 0) {
+      adjustedY = 20;
+    }
+    
     _overlayEntry = OverlayEntry(
       builder: (context) => Positioned(
-        left: position.dx,
-        top: position.dy,
+        left: adjustedX,
+        top: adjustedY,
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(8),
           child: Container(
-            padding: EdgeInsets.all(8),
-            constraints: BoxConstraints(maxWidth: 300),
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(maxWidth: tooltipWidth),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surface,
               borderRadius: BorderRadius.circular(8),
@@ -55,19 +106,20 @@ class _CalibrationChartWidgetState extends State<CalibrationChartWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                for (final bet in bets)                  Padding(
-                    padding: EdgeInsets.symmetric(vertical: 4),
+                for (final bet in bets)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
                           '${bet.amount.toStringAsFixed(0)} mana @ ${(bet.outcome as dynamic).probAfter.toStringAsFixed(2)} - ',
-                          style: TextStyle(fontSize: 12),
+                          style: const TextStyle(fontSize: 12),
                         ),
                         Expanded(
                           child: Text(
                             bet.market?.question ?? 'Unknown market',
-                            style: TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 12),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -98,25 +150,30 @@ class _CalibrationChartWidgetState extends State<CalibrationChartWidget> {
     final bucketIndex = position.dx ~/ bucketWidth;
     
     if (bucketIndex >= 0 && bucketIndex < widget.buckets.length) {
-      final bucket = widget.buckets[bucketIndex];
-      final bucketHeight = size.height;
-      final yPosition = size.height - position.dy;
+      final yesHitbox = _getArrowHitbox(bucketIndex, true, size);
+      final noHitbox = _getArrowHitbox(bucketIndex, false, size);
       
-      // Determine if hovering over YES or NO arrow based on y position
-      final isYes = yPosition > bucketHeight / 2;
+      bool hitYes = yesHitbox?.contains(position) ?? false;
+      bool hitNo = noHitbox?.contains(position) ?? false;
       
-      setState(() {
-        _hoveredBucketIndex = bucketIndex;
-        _hoveringYes = isYes;
-      });
+      if (hitYes || hitNo) {
+        final isYes = hitYes;
+        final bucket = widget.buckets[bucketIndex];
+        
+        setState(() {
+          _hoveredBucketIndex = bucketIndex;
+          _hoveringYes = isYes;
+        });
 
-      final bets = isYes ? bucket.getTopYesBets() : bucket.getTopNoBets();
-      if (bets.isNotEmpty) {
-        _showTooltip(
-          context,
-          position.translate(20, isYes ? -100 : 20), // Adjust tooltip position
-          bets,
-        );
+        final bets = isYes ? bucket.getTopYesBets() : bucket.getTopNoBets();
+        if (bets.isNotEmpty) {
+          _showTooltip(context, position, bets);
+        }
+      } else {
+        setState(() {
+          _hoveredBucketIndex = null;
+          _removeOverlay();
+        });
       }
     }
   }
@@ -184,7 +241,6 @@ class _CalibrationChartPainter extends CustomPainter {
       Paint()..color = colors.secondary,
     );
 
-    // X-axis marks
     final oneTenthWidth = size.width / 10;
     for (int i = 0; i <= 10; ++i) {
       final o = i * oneTenthWidth;
@@ -241,7 +297,8 @@ class _CalibrationChartPainter extends CustomPainter {
       final noY = size.height * bucket.noRatio;
       final yesY = size.height * bucket.yesRatio;
 
-      final x = size.width * (i / buckets.length + 0.5 / buckets.length);      drawMarker(
+      final x = size.width * (i / buckets.length + 0.5 / buckets.length);      
+      drawMarker(
         canvas: canvas,
         rotation: 0,
         offset: Offset(x, flipY(size, yesY)),
@@ -276,13 +333,12 @@ class _CalibrationChartPainter extends CustomPainter {
       minWidth: 0,
       maxWidth: double.infinity,
     );
-    // final xCenter = (size.width - textPainter.width) / 2;
-    // final yCenter = (size.height - textPainter.height) / 2;
     textPainter.paint(
       canvas,
       offset - Offset(textPainter.width / 2, textPainter.height / 2),
     );
   }
+
   void drawMarker({
     required Canvas canvas,
     required double rotation,
@@ -305,7 +361,6 @@ class _CalibrationChartPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
     
     if (isHovered) {
-      // Draw glow effect for hovered marker
       canvas.drawPath(
         path,
         Paint()
@@ -317,6 +372,7 @@ class _CalibrationChartPainter extends CustomPainter {
 
     canvas.drawPath(path, paint);
   }
+
   @override
   bool shouldRepaint(covariant _CalibrationChartPainter oldDelegate) {
     return buckets != oldDelegate.buckets ||
