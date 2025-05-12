@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy and Update docs Directory
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main # Adjust this to the branch you want to trigger deployment from
 
 jobs:
-  build-and-deploy:
+  build-and-update-docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -18,7 +18,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.29.3" # Specify your Flutter version
+          flutter-version: "3.29.3" # 
 
       # Step 3: Install dependencies
       - name: Install dependencies
@@ -28,10 +28,19 @@ jobs:
       - name: Build web app
         run: flutter build web --base-href "/manifold_calibration/"
 
-      # Step 5: Deploy to GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: build/web
-          destination_dir: docs
+      # Step 5: Update the docs/ folder
+      - name: Update docs folder
+        run: |
+          rm -rf docs/*
+          cp -r build/web/* docs/
+
+      # Step 6: Commit and push changes to docs
+      - name: Commit and push changes
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add docs/
+          git commit -m "Update docs directory for GitHub Pages"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
